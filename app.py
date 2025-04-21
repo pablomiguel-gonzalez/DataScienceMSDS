@@ -2,93 +2,70 @@ import streamlit as st
 import networkx as nx
 import matplotlib.pyplot as plt
 
-# --- Page Setup ---
-st.set_page_config(page_title="Fictional Roadtrip Shortest Path", layout="wide")
-st.title("🚗 Fictional Roadtrip Across the U.S.")
-st.markdown("Find the shortest route from San Francisco to Miami, passing through imaginary towns!")
+# Define the graph edges (road connections and distances)
+edges = [
+    ('Origin', 'A', 40),
+    ('Origin', 'B', 60),
+    ('Origin', 'C', 50),
+    ('A', 'B', 10),
+    ('A', 'D', 70),
+    ('B', 'C', 20),
+    ('B', 'D', 55),
+    ('B', 'E', 40),
+    ('C', 'E', 50),
+    ('D', 'E', 10),
+    ('D', 'Destination', 60),
+    ('E', 'Destination', 80)
+]
 
-# --- Define the Graph ---
-edges = {
-    ('Origin', 'A'): 40,
-    ('Origin', 'B'): 15,
-    ('A', 'C'): 25,
-    ('A', 'D'): 10,
-    ('B', 'A'): 20,
-    ('B', 'D'): 30,
-    ('C', 'Destination'): 20,
-    ('D', 'C'): 15,
-    ('D', 'Destination'): 35,
-    ('E', 'Destination'): 10,
-    ('B', 'E'): 50
-}
-
+# Initialize directed graph
 G = nx.DiGraph()
-for (u, v), w in edges.items():
-    G.add_edge(u, v, weight=w)
+G.add_weighted_edges_from(edges)
 
-# --- Custom Map-Like Coordinates (Imaginary US Locations) ---
+# Define custom layout to spread out towns for better readability
 custom_pos = {
-    'Origin': (-120, 37),        # San Francisco
-    'A': (-105, 39),             # Denver
-    'B': (-87, 41),              # Chicago
-    'C': (-74, 40),              # NYC
-    'D': (-86, 36),              # Nashville
-    'E': (-84, 33),              # Atlanta
-    'Destination': (-80, 26)     # Miami
+    'Origin': (0, 2),
+    'A': (1, 3),
+    'B': (2, 2),
+    'C': (3, 3),
+    'D': (3, 1),
+    'E': (4, 2),
+    'Destination': (5, 2)
 }
 
-# Normalize coordinates
-min_x = min(x for x, y in custom_pos.values())
-max_x = max(x for x, y in custom_pos.values())
-min_y = min(y for x, y in custom_pos.values())
-max_y = max(y for x, y in custom_pos.values())
+# Streamlit UI
+st.title("🚗 Shortest Path Explorer Between Towns")
+st.markdown("Use the dropdowns below to explore the shortest route between any two towns.")
 
-norm_pos = {
-    node: (
-        (x - min_x) / (max_x - min_x),
-        (y - min_y) / (max_y - min_y)
-    )
-    for node, (x, y) in custom_pos.items()
-}
+# Select origin and destination interactively
+towns = list(G.nodes)
+start_town = st.selectbox("Select starting town:", towns, index=0)
+end_town = st.selectbox("Select destination town:", towns, index=towns.index("Destination"))
 
-# --- Shortest Path ---
-source, target = "Origin", "Destination"
-shortest_path = nx.dijkstra_path(G, source, target)
-shortest_distance = nx.dijkstra_path_length(G, source, target)
+# Compute shortest path
+if start_town != end_town:
+    try:
+        path = nx.dijkstra_path(G, source=start_town, target=end_town)
+        distance = nx.dijkstra_path_length(G, source=start_town, target=end_town)
+        st.success(f"**Shortest Path:** {' → '.join(path)}")
+        st.info(f"**Total Distance:** {distance} miles")
 
-# --- Sidebar Info ---
-st.sidebar.header("Path Info")
-st.sidebar.markdown(f"**Start:** {source}")
-st.sidebar.markdown(f"**End:** {target}")
-st.sidebar.markdown(f"**Shortest Path:** {' → '.join(shortest_path)}")
-st.sidebar.markdown(f"**Total Distance:** {shortest_distance} miles")
+        # Draw the graph
+        fig, ax = plt.subplots(figsize=(10, 6))
+        nx.draw(G, pos=custom_pos, with_labels=True, node_color='skyblue',
+                node_size=1200, font_weight='bold', ax=ax)
+        nx.draw_networkx_edge_labels(G, pos=custom_pos,
+                                     edge_labels={(u, v): d['weight'] for u, v, d in G.edges(data=True)}, ax=ax)
 
-# Optional step table
-with st.expander("📊 View Step-by-Step Table"):
-    path_data = []
-    for i in range(len(shortest_path) - 1):
-        u = shortest_path[i]
-        v = shortest_path[i + 1]
-        path_data.append({
-            "From": u,
-            "To": v,
-            "Distance": G[u][v]["weight"]
-        })
-    st.dataframe(path_data)
+        # Highlight path in red
+        edge_path = list(zip(path, path[1:]))
+        nx.draw_networkx_edges(G, pos=custom_pos, edgelist=edge_path,
+                               edge_color='red', width=3, ax=ax)
 
-# --- Draw Graph ---
-fig, ax = plt.subplots(figsize=(10, 6))
+        st.pyplot(fig)
 
-# Base nodes and edges
-nx.draw_networkx_nodes(G, norm_pos, node_color="#66b3ff", node_size=1200, ax=ax)
-nx.draw_networkx_labels(G, norm_pos, font_size=12, font_weight='bold', ax=ax)
-nx.draw_networkx_edges(G, norm_pos, edgelist=G.edges(), edge_color='gray', arrows=True, alpha=0.4, ax=ax)
-nx.draw_networkx_edge_labels(G, norm_pos, edge_labels=nx.get_edge_attributes(G, 'weight'), font_size=9, ax=ax)
+    except nx.NetworkXNoPath:
+        st.error(f"No path found between {start_town} and {end_town}.")
+else:
+    st.warning("Please select different towns for origin and destination.")
 
-# Highlight shortest path
-path_edges = list(zip(shortest_path[:-1], shortest_path[1:]))
-nx.draw_networkx_edges(G, norm_pos, edgelist=path_edges, edge_color='red', width=3, arrows=True, ax=ax)
-
-ax.set_title("📍 Shortest Path Roadtrip Map", fontsize=16)
-ax.axis('off')
-st.pyplot(fig)
